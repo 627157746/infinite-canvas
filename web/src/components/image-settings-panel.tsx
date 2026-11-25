@@ -3,6 +3,8 @@
 import { type ReactNode, useState } from "react";
 import { ConfigProvider, Switch } from "antd";
 
+import { GatewayImageSettings } from "@/components/gateway-settings";
+import { gatewayImageCaps } from "@/lib/ai-media-gateway";
 import { type CanvasTheme } from "@/lib/canvas-theme";
 import type { AiConfig } from "@/stores/use-config-store";
 
@@ -40,7 +42,7 @@ export const imageSizeOptions = aspectOptions.map((item) => ({
 
 type ImageSettingsPanelProps = {
     config: AiConfig;
-    onConfigChange: (key: "quality" | "size" | "count", value: string) => void;
+    onConfigChange: (key: "quality" | "size" | "count" | "imageBackground", value: string) => void;
     theme: CanvasTheme;
     showTitle?: boolean;
     showSize?: boolean;
@@ -52,6 +54,7 @@ type ImageSettingsPanelProps = {
 
 export function ImageSettingsPanel({ config, onConfigChange, theme, showTitle = true, showSize = true, showCount = true, className = "w-[320px] space-y-4 rounded-2xl px-1 py-0.5", maxCount = 15, quickCount = 10 }: ImageSettingsPanelProps) {
     const [snapDimensionToStep, setSnapDimensionToStep] = useState(true);
+    const gateway = gatewayImageCaps(config, config.model || config.imageModel);
     const quality = config.quality || "auto";
     const count = Math.max(1, Math.min(maxCount, Math.floor(Math.abs(Number(config.count)) || 1)));
     const activeSize = config.size || "auto";
@@ -67,6 +70,8 @@ export function ImageSettingsPanel({ config, onConfigChange, theme, showTitle = 
         const height = key === "height" ? next : dimensions.height;
         onConfigChange("size", `${alignDimension(width, snapDimensionToStep)}x${alignDimension(height, snapDimensionToStep)}`);
     };
+
+    if (gateway) return <GatewayImageSettings caps={gateway} config={config} onConfigChange={onConfigChange} theme={theme} showTitle={showTitle} showSize={showSize} showCount={showCount} className={className} maxCount={maxCount} />;
 
     return (
         <ImageSettingsTheme theme={theme}>

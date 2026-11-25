@@ -6,6 +6,7 @@ import { dataUrlToFile } from "@/lib/image-utils";
 import { isKIESeedreamLayerDecompositionModel } from "@/lib/kie-models";
 import { isMimoChannel, mimoModels } from "@/lib/mimo-tts";
 import { modelChannelAttributionHeaders } from "@/lib/model-channel";
+import { gatewayImageCaps, parseGatewayModels, pickGatewayOption, type GatewayImageCaps } from "@/lib/ai-media-gateway";
 import { dataUrlToGeminiInlineData, geminiActionUrl, geminiDirectHeaders, geminiErrorMessage, isGeminiConfig, normalizeGeminiBaseUrl } from "@/lib/gemini";
 import { autoSyncImage, imageToDataUrl, resolveImageUrl, type UploadedImage } from "@/services/image-storage";
 import { buildApiUrl, channelIdForActiveModel, channelProtocolForConfig, directAIProviderForConfig, localChannelForActiveModel, type AiConfig } from "@/stores/use-config-store";
@@ -961,6 +962,8 @@ async function requestImages(config: AiConfig & { seedIndex?: number; seedCount?
 		const result = await executeParameterTranslation(config,translation,input,signal);
 		return result.urls.map((dataUrl) => ({id:nanoid(),dataUrl}));
 	}
+    const gateway = gatewayImageCaps(config, config.model);
+    if (gateway) return requestGatewayImages(config, gateway, prompt, references, signal);
     assertImageReferencesSupported(config.model, references);
     const params = { ...createImageRequestParams(config), signal };
     const inputImageDataUrls = references.length ? await Promise.all(references.map((image) => imageToDataUrl(image))) : [];
@@ -978,6 +981,65 @@ async function requestImages(config: AiConfig & { seedIndex?: number; seedCount?
     if (config.apiMode === "chat" && !isGeminiConfig(config) && !isZhipuImageModel(config.model)) return requestChatImagesSingle(config, prompt, inputImageDataUrls, params);
     if (config.apiMode === "responses" && !isGeminiConfig(config) && !isZhipuImageModel(config.model)) return requestResponsesSingle(config, prompt, inputImageDataUrls, params);
     return references.length ? requestImageEditSingle(config, prompt, references, params) : requestImageGenerationSingle(config, prompt, params);
+}
+
+// AI Media Gateway：只发送模型能力里声明的参数，取值不在能力列表里的项不发送。直连和服务器代理两条路共用这份字段。
+function gatewayImageRequest(config: AiConfig, caps: GatewayImageCaps, prompt: string, references: ReferenceImage[]) {
+    if (references.length && !caps.supports_edit) throw new ImageRequestError("当前模型不支持参考图，请移除参考图后再生成");
+    if (!references.length && caps.requires_images) throw new ImageRequestError("当前模型需要至少一张参考图");
+    const params = createImageRequestParams(config);
+    const defaults = caps.defaults || {};
+    const n = Math.max(1, Math.min(caps.max_n || 1, params.n));
+    const size = pickGatewayOption(config.size, caps.sizes, defaults.size);
+    const quality = pickGatewayOption(config.quality, caps.qualities, defaults.quality);
+    const background = pickGatewayOption(config.imageBackground, caps.backgrounds, defaults.background);
+    const fields: Record<string, string | number> = {
+        model: config.model,
+        prompt: withPromptGuard(config, withSystemPrompt(config, prompt)),
+        ...(n > 1 ? { n } : {}),
+        ...(size ? { size } : {}),
+        ...(quality ? { quality } : {}),
+        ...(background ? { background } : {}),
+        ...(config.responseFormatB64Json ? { response_format: "b64_json" } : {}),
+    };
+    const edit = references.length > 0;
+    const endpoint = edit ? "/images/edits" : "/images/generations";
+    const editImages = caps.max_edit_images ? references.slice(0, caps.max_edit_images) : references;
+    return { fields, edit, endpoint, editImages, timeoutSeconds: params.timeoutSeconds };
+}
+
+async function gatewayImageFiles(images: ReferenceImage[]) {
+    return Promise.all(images.map(async (image) => dataUrlToFile({ ...image, dataUrl: await imageToDataUrl(image) })));
+}
+
+async function requestGatewayImages(config: AiConfig, caps: GatewayImageCaps, prompt: string, references: ReferenceImage[], signal?: AbortSignal): Promise<GeneratedImage[]> {
+    const { fields, edit, endpoint, editImages, timeoutSeconds } = gatewayImageRequest(config, caps, prompt, references);
+    const params = { timeoutSeconds };
+    let body: FormData | string = JSON.stringify(fields);
+    let summary: unknown = fields;
+    if (edit) {
+        const form = new FormData();
+        Object.entries(fields).forEach(([key, value]) => form.set(key, String(value)));
+        (await gatewayImageFiles(editImages)).forEach((file) => form.append("image", file));
+        body = form;
+        summary = summarizeFormData(form);
+    }
+    return requestAndParseImages(
+        config,
+        endpoint,
+        summary,
+        params.timeoutSeconds,
+        () => requestWithTransientRetry(() => withTimeout(params.timeoutSeconds, signal, (timeoutSignal) => fetch(aiApiUrl(config, endpoint), {
+            method: "POST",
+            headers: edit ? aiHeaders(config) : aiHeaders(config, "application/json"),
+            body,
+            signal: timeoutSignal,
+        }))),
+        async (response) => {
+            const payload = (await response.json()) as ImageApiResponse;
+            return { images: parseImagePayload(payload, IMAGE_MIME), responseBody: stringifyLogPayload(payload) };
+        },
+    );
 }
 
 async function imageTranslationInput(config: AiConfig, prompt: string, references: ReferenceImage[], params: ImageRequestParams): Promise<TranslationInput> {
@@ -1086,12 +1148,29 @@ export async function pollCanvasImageTaskStatus(taskId: string, signal?: AbortSi
 }
 
 async function createCanvasImageTaskRequest(config: AiConfig & { seedIndex?: number; seedCount?: number }, prompt: string, references: ReferenceImage[], params: ImageRequestParams, options: CanvasImageTaskOptions): Promise<RequestInit> {
-    assertImageReferencesSupported(config.model, references);
+    const gateway = gatewayImageCaps(config, config.model);
+    if (!gateway) assertImageReferencesSupported(config.model, references);
     const taskChannelId = channelIdForActiveModel(config);
     const taskChannelHeader: Record<string, string> = config.channelMode === "remote" && taskChannelId ? { "X-Model-Channel-ID": taskChannelId } : {};
     const tokenHeaders = { ...aiHeaders(config), ...taskChannelHeader };
     const jsonHeaders = { ...aiHeaders(config, "application/json"), ...taskChannelHeader };
     const meta = { nodeId: options.nodeId || "", source: options.source || "canvas", sourceId: options.sourceId || "", clientTaskId: options.clientTaskId || "", prompt, channelId: taskChannelId };
+    // AI Media Gateway：代理模式也按网关能力组装参数，和直连发出去的一致。
+    if (gateway) {
+        const { fields, edit, endpoint, editImages } = gatewayImageRequest(config, gateway, prompt, references);
+        if (!edit) return { method: "POST", headers: jsonHeaders, body: JSON.stringify({ endpoint, ...meta, request: fields }) };
+        const formData = new FormData();
+        formData.set("_canvas_endpoint", endpoint);
+        formData.set("_canvas_source", meta.source);
+        formData.set("_canvas_node_id", meta.nodeId);
+        formData.set("_canvas_source_id", meta.sourceId);
+        formData.set("_canvas_task_id", meta.clientTaskId);
+        formData.set("_canvas_prompt", meta.prompt);
+        if (meta.channelId) formData.set("_canvas_channel_id", meta.channelId);
+        Object.entries(fields).forEach(([key, value]) => formData.set(key, String(value)));
+        (await gatewayImageFiles(editImages)).forEach((file) => formData.append("image", file));
+        return { method: "POST", headers: tokenHeaders, body: formData };
+    }
     if (isGeminiConfig(config)) {
         const body = await createGeminiImageBody(config, prompt, references, params);
         return {
@@ -1251,6 +1330,20 @@ export async function requestImageQuestion(config: AiConfig, messages: ChatCompl
     }
     refreshRemoteUser(config);
     return answer || "没有返回内容";
+}
+
+// AI Media Gateway 渠道：/models 额外返回每个模型的 kind 与 capabilities。
+export async function fetchGatewayModelSpecs(config: AiConfig) {
+    const channel = localChannelForActiveModel(config);
+    try {
+        const response = await axios.get(buildApiUrl(channel?.baseUrl || config.baseUrl, "/models"), {
+            headers: { Authorization: `Bearer ${channel?.apiKey || config.apiKey}` },
+            timeout: IMAGE_REQUEST_TIMEOUT_SECONDS * 1000,
+        });
+        return parseGatewayModels(response.data);
+    } catch (error) {
+        throw new Error(readAxiosError(error, "读取模型失败"));
+    }
 }
 
 export async function fetchImageModels(config: AiConfig) {

@@ -33,6 +33,8 @@ type ModelChannel struct {
 
 	ModelCapabilities    map[string]string `json:"modelCapabilities,omitempty"`
 	ParameterTranslation string            `json:"parameterTranslation,omitempty"`
+	// ModelSpecs 只用于 AI Media Gateway 渠道：按模型名原样保存网关 /models 返回的 {kind, capabilities}。
+	ModelSpecs map[string]json.RawMessage `json:"modelSpecs,omitempty"`
 }
 
 type WorkflowFieldMapping struct {
@@ -129,7 +131,8 @@ type PublicModelChannelInfo struct {
 	Remark                     string            `json:"remark"`
 	Workflows                  []WorkflowSummary `json:"workflows,omitempty"`
 
-	ModelCapabilities map[string]string `json:"modelCapabilities,omitempty"`
+	ModelCapabilities map[string]string          `json:"modelCapabilities,omitempty"`
+	ModelSpecs        map[string]json.RawMessage `json:"modelSpecs,omitempty"`
 }
 
 // PublicSetting 公开配置。

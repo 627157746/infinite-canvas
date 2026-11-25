@@ -16,6 +16,8 @@ const (
 	ModelChannelProtocolAutoDL   = "autodl"
 	ModelChannelProtocolArk      = "ark"
 	ModelChannelProtocolTokenDance = "tokendance"
+	// ModelChannelProtocolAIMG 是 AI Media Gateway：OpenAI 兼容，/models 额外返回每个模型的 kind 与 capabilities。
+	ModelChannelProtocolAIMG = "aimg"
 )
 
 type modelProtocolAdapter struct {
@@ -31,7 +33,7 @@ type modelProtocolRule struct {
 }
 
 var modelProtocolRegistry map[string]modelProtocolAdapter
-var modelProtocolIDs = []string{ModelChannelProtocolOpenAI, ModelChannelProtocolGemini, ModelChannelProtocolGrok2API, ModelChannelProtocolMiniMax, ModelChannelProtocolAPIMart, ModelChannelProtocolKIE, ModelChannelProtocolMiMo, ModelChannelProtocolAutoDL, ModelChannelProtocolArk, ModelChannelProtocolTokenDance}
+var modelProtocolIDs = []string{ModelChannelProtocolOpenAI, ModelChannelProtocolGemini, ModelChannelProtocolGrok2API, ModelChannelProtocolMiniMax, ModelChannelProtocolAPIMart, ModelChannelProtocolKIE, ModelChannelProtocolMiMo, ModelChannelProtocolAutoDL, ModelChannelProtocolArk, ModelChannelProtocolTokenDance, ModelChannelProtocolAIMG}
 
 func init() {
 	compatible := modelProtocolAdapter{
@@ -158,6 +160,11 @@ func modelProtocolForChannel(channel model.ModelChannel) modelProtocolAdapter {
 
 func IsArkChannel(channel model.ModelChannel) bool {
 	return strings.EqualFold(strings.TrimSpace(channel.Protocol), ModelChannelProtocolArk)
+}
+
+// IsAIMGChannel 判断是否为 AI Media Gateway 渠道；网关自己做模型适配，画布侧按模型名的直连改写需跳过。
+func IsAIMGChannel(channel model.ModelChannel) bool {
+	return strings.EqualFold(strings.TrimSpace(channel.Protocol), ModelChannelProtocolAIMG)
 }
 
 func IsTokenDanceChannel(channel model.ModelChannel) bool {

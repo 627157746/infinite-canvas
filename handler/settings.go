@@ -54,6 +54,17 @@ func AdminChannelModels(w http.ResponseWriter, r *http.Request) {
 	OK(w, models)
 }
 
+func AdminChannelModelSpecs(w http.ResponseWriter, r *http.Request) {
+	var request adminChannelActionRequest
+	_ = json.NewDecoder(r.Body).Decode(&request)
+	specs, err := service.AdminChannelModelSpecs(request.Index, request.Channel)
+	if err != nil {
+		FailError(w, err)
+		return
+	}
+	OK(w, specs)
+}
+
 func AdminTestChannelModel(w http.ResponseWriter, r *http.Request) {
 	var request adminChannelActionRequest
 	_ = json.NewDecoder(r.Body).Decode(&request)

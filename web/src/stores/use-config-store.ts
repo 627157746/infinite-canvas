@@ -5,6 +5,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
 import { directAIProviderForProtocol, isWorkflowProtocol, type DirectAIProvider, type ModelChannelProtocol } from "@/lib/model-channel";
+import type { GatewayModelSpecs } from "@/lib/ai-media-gateway";
 import type { WorkflowRef, WorkflowSummary } from "@/lib/workflow-channel";
 import { apiGet } from "@/services/api/request";
 import type { AdminPublicSettings } from "@/services/api/admin";
@@ -18,6 +19,7 @@ export type LocalModelChannel = {
     apiKey: string;
     models: string[];
     modelCapabilities?: ModelCapabilities;
+    modelSpecs?: GatewayModelSpecs;
     uploadApiKey?: string;
     bridgeId?: string;
     comfyUrl?: string;
@@ -46,6 +48,7 @@ export type AiConfig = {
     audioFormat: string;
     audioSpeed: string;
     audioInstructions: string;
+    audioLanguage: string;
     grokTtsVoice: string;
     grokTtsLanguage: string;
     grokTtsFormat: string;
@@ -81,6 +84,7 @@ export type AiConfig = {
     size: string;
     videoSize: string;
     count: string;
+    imageBackground: string;
     canvasImageCount: string;
     nodeRegenerateBehavior: "new-node" | "overwrite";
     timeout: string;
@@ -97,7 +101,7 @@ export type AiConfig = {
         workflowAgent: string;
     };
     localChannels: LocalModelChannel[];
-    publicChannels: Array<{ id?: string; protocol?: LocalModelChannel["protocol"]; name?: string; baseUrl?: string; models?: string[]; modelCapabilities?: ModelCapabilities; parameterTranslationModels?: string[]; workflows?: WorkflowSummary[]; weight?: number; timeout?: number; enabled?: boolean; remark?: string }>;
+    publicChannels: Array<{ id?: string; protocol?: LocalModelChannel["protocol"]; name?: string; baseUrl?: string; models?: string[]; modelCapabilities?: ModelCapabilities; modelSpecs?: GatewayModelSpecs; parameterTranslationModels?: string[]; workflows?: WorkflowSummary[]; weight?: number; timeout?: number; enabled?: boolean; remark?: string }>;
     syncStorageConfig: boolean;
     syncWebDAVStorageConfig: boolean;
     activeChannelId: string;
@@ -124,6 +128,7 @@ export const defaultConfig: AiConfig = {
     audioFormat: "mp3",
     audioSpeed: "1",
     audioInstructions: "",
+    audioLanguage: "",
     grokTtsVoice: "eve",
     grokTtsLanguage: "auto",
     grokTtsFormat: "mp3",
@@ -159,6 +164,7 @@ export const defaultConfig: AiConfig = {
     size: "1:1",
     videoSize: "1280x720",
     count: "1",
+    imageBackground: "",
     canvasImageCount: "1",
     nodeRegenerateBehavior: "new-node",
     timeout: "600",
@@ -540,6 +546,7 @@ export function normalizeLocalChannels(config: Partial<AiConfig>): LocalModelCha
         apiKey: channel.apiKey || "",
         models: Array.isArray(channel.models) ? channel.models.filter(Boolean) : [],
         modelCapabilities: channel.modelCapabilities || {},
+        ...(channel.modelSpecs ? { modelSpecs: channel.modelSpecs } : {}),
         ...(isWorkflowProtocol(channel.protocol || "") ? {
             uploadApiKey: channel.uploadApiKey || "",
             bridgeId: channel.bridgeId || "",

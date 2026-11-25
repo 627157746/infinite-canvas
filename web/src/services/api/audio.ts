@@ -7,6 +7,7 @@ import { isAutoDLConfig } from "@/lib/autodl";
 import { isGrok2APITtsConfig, normalizeGrokTtsFormat, normalizeGrokTtsLanguage, normalizeGrokTtsSpeed, type GrokTtsVoice } from "@/lib/grok-tts";
 import { isMimoPresetTtsModel, isMimoTtsModel, isMimoVoiceCloneModel, isMimoVoiceDesignModel, normalizeMimoTtsFormat, normalizeMimoTtsVoice } from "@/lib/mimo-tts";
 import { modelChannelAttributionHeaders } from "@/lib/model-channel";
+import { gatewaySpeechCaps, gatewaySpeechVoice, pickGatewayOption, type GatewaySpeechCaps } from "@/lib/ai-media-gateway";
 import { geminiActionUrl, geminiDirectHeaders, geminiErrorMessage, isGeminiConfig, isGeminiTtsModel } from "@/lib/gemini";
 import { geminiPcmBase64ToWav, normalizeGeminiTtsVoice } from "@/lib/gemini-tts";
 import { isMiniMaxTtsConfig, normalizeMiniMaxTtsFormat, normalizeMiniMaxTtsSpeed, normalizeMiniMaxTtsVoice, type MiniMaxTtsVoice } from "@/lib/minimax-tts";
@@ -93,6 +94,16 @@ export function fetchGrokTtsVoices(config: AiConfig, model: string) {
         .finally(() => grokTtsVoiceRequests.delete(requestKey));
     grokTtsVoiceRequests.set(requestKey, request);
     return request;
+}
+
+export type GatewayVoice = { id: string; name: string };
+
+// AI Media Gateway 的音色库与语言列表：GET /audio/voices?model=，远程模式经画布后端 /api/v1/audio/voices 转发。
+export async function fetchGatewayVoices(config: AiConfig, model: string) {
+    const requestConfig = { ...config, model, audioModel: model };
+    const response = await axios.get<{ data?: Array<{ id?: string; name?: string }>; languages?: string[] }>(aiApiUrl(requestConfig, "/audio/voices"), { headers: aiHeaders(requestConfig), params: { model } });
+    const voices = (response.data.data || []).flatMap((voice) => voice.id ? [{ id: voice.id, name: voice.name || voice.id }] : []);
+    return { voices, languages: Array.isArray(response.data.languages) ? response.data.languages : [] };
 }
 
 export function fetchMiniMaxTtsVoices(config: AiConfig, model: string) {
@@ -305,6 +316,8 @@ async function syncGeneratedAudio(task: CanvasAudioTask, resultId = task.started
 }
 
 async function buildAudioSpeechRequest(config: AiConfig, model: string, prompt: string, referenceAudio?: ReferenceAudio) {
+    const gateway = gatewaySpeechCaps(config, model);
+    if (gateway) return buildGatewaySpeechRequest(gateway, config, model, prompt, referenceAudio);
     if (isAutoDLConfig(config, model)) {
         if (!referenceAudio) throw new Error("请连接并选择参考音频节点");
         const { autoDLReferenceURL } = await import("./direct-ai");
@@ -368,7 +381,30 @@ async function buildAudioSpeechRequest(config: AiConfig, model: string, prompt: 
     };
 }
 
+// AI Media Gateway：只发送模型能力里声明支持的字段。
+function buildGatewaySpeechRequest(caps: GatewaySpeechCaps, config: AiConfig, model: string, prompt: string, referenceAudio?: ReferenceAudio) {
+    if (referenceAudio) throw new Error("AI Media Gateway 语音模型不支持直接连接参考音频，请在网关音色库中克隆后选择该音色");
+    const voice = gatewaySpeechVoice(caps, config.audioVoice);
+    if (caps.voice_required && !voice) throw new Error("请先选择声音");
+    const format = pickGatewayOption(config.audioFormat, caps.formats);
+    const speedMode = caps.speed?.mode || "none";
+    const speed = Math.min(caps.speed?.max || 2, Math.max(caps.speed?.min || 0.5, Number(config.audioSpeed) || 1));
+    const instructions = config.audioInstructions.trim();
+    const language = (config.audioLanguage || "").trim();
+    return {
+        model,
+        input: prompt,
+        ...(voice ? { voice } : {}),
+        ...(format ? { response_format: format } : {}),
+        ...(speedMode !== "none" ? { speed } : {}),
+        ...(caps.instructions_uses && instructions ? { instructions } : {}),
+        ...(caps.language?.supported && language ? { language } : {}),
+    };
+}
+
 function audioResponseFormat(config: AiConfig, model: string) {
+    const gateway = gatewaySpeechCaps(config, model);
+    if (gateway) return pickGatewayOption(config.audioFormat, gateway.formats) || "mp3";
     if (isGeminiTtsModel(model) && isGeminiConfig(config, model)) return "wav";
     if (isMiniMaxTtsConfig(config, model)) return normalizeMiniMaxTtsFormat(config.miniMaxTtsFormat);
     if (isGlmTtsModel(model)) return normalizeGlmTtsFormat(config.glmTtsFormat);

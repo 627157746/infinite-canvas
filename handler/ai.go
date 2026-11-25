@@ -96,6 +96,16 @@ func AITTSVoices(w http.ResponseWriter, r *http.Request) {
 	proxyAIGetRequest(w, r, "/tts/voices?model="+url.QueryEscape(modelName))
 }
 
+// AIAudioVoices 转发 AI Media Gateway 的音色库列表（GET /audio/voices?model=）。
+func AIAudioVoices(w http.ResponseWriter, r *http.Request) {
+	modelName := strings.TrimSpace(r.URL.Query().Get("model"))
+	if modelName == "" {
+		Fail(w, "缺少模型名称")
+		return
+	}
+	proxyAIGetRequest(w, r, "/audio/voices?model="+url.QueryEscape(modelName))
+}
+
 func proxyAIGetRequest(w http.ResponseWriter, r *http.Request, path string) {
 	startedAt := time.Now()
 	user, ok := service.UserFromContext(r.Context())

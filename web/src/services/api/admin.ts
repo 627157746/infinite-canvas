@@ -1,5 +1,6 @@
 import type { ModelChannelProtocol } from "@/lib/model-channel";
 import type { ModelCapabilities } from "@/stores/use-config-store";
+import type { GatewayModelSpecs } from "@/lib/ai-media-gateway";
 import type { WorkflowEntry, WorkflowSummary } from "@/lib/workflow-channel";
 import { apiDelete, apiGet, apiPost, compactApiParams } from "@/services/api/request";
 import type { Prompt, PromptListResponse } from "@/services/api/prompts";
@@ -186,6 +187,7 @@ export type AdminModelChannel = {
     apiKey: string;
     models: string[];
     modelCapabilities?: ModelCapabilities;
+    modelSpecs?: GatewayModelSpecs;
     parameterTranslation?: string;
     weight: number;
     timeout: number;
@@ -233,6 +235,7 @@ export type AdminPublicModelChannelInfo = {
     baseUrl: string;
     models: string[];
     modelCapabilities?: ModelCapabilities;
+    modelSpecs?: GatewayModelSpecs;
     weight: number;
     timeout: number;
     enabled: boolean;
@@ -365,6 +368,10 @@ export type AdminChannelActionRequest = {
 
 export async function fetchChannelModels(token: string, payload: AdminChannelActionRequest) {
     return apiPost<string[]>("/api/admin/settings/channel-models", payload, token);
+}
+
+export async function fetchChannelModelSpecs(token: string, payload: AdminChannelActionRequest) {
+    return apiPost<GatewayModelSpecs>("/api/admin/settings/channel-model-specs", payload, token);
 }
 
 export async function testChannelModel(token: string, payload: AdminChannelActionRequest) {

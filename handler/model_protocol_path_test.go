@@ -19,6 +19,9 @@ func TestModelProtocolProxyPathContract(t *testing.T) {
 		{"autodl poll escaped", "autodl", "", "minimax_h3_b99_002", "/videos/task a?b", "/api/v1/comfyui/comfyui_workflow/result/task%20a%3Fb"},
 		{"gemini chat", "gemini", "", "models/gemini-test", "/chat/completions", "/v1beta/models/gemini-test:streamGenerateContent?alt=sse"},
 		{"gemini speech before mimo", "gemini", "", "mimo-v2.5-tts", "/audio/speech", "/v1beta/models/mimo-v2.5-tts:generateContent"},
+		{"mimo tts direct rewrite", "mimo", "", "mimo-v2.5-tts", "/audio/speech", "/chat/completions"},
+		{"aimg mimo tts passthrough", "aimg", "", "mimo-v2.5-tts", "/audio/speech", "/audio/speech"},
+		{"aimg mimo voiceclone passthrough", " AIMG ", "", "mimo-v2.5-tts-voiceclone", "/audio/speech", "/audio/speech"},
 		{"gemini video before cog", " GEMINI ", "https://api.kie.ai", "cogvideox-3", "/videos", "/v1beta/models/cogvideox-3:predictLongRunning"},
 		{"gemini operation", "gemini", "", "veo", "/videos/operations/task", "/v1beta/operations/task"},
 		{"minimax create before kie URL", "minimax", "https://api.kie.ai", "MiniMax-H3", "/videos", "/v2/video_generation"},
@@ -106,6 +109,10 @@ func TestModelProtocolProxyPreparationOrder(t *testing.T) {
 			name: "video KIE mismatch continues APIMart", protocol: "apimart", baseURL: "https://api.kie.ai", model: "future-model", path: "/videos/generations", mode: aiProtocolVideoRequest,
 			body:     `{"prompt":"scene","seconds":"7s"}`,
 			wantPath: "/videos/generations", wantLabel: "APIMart video", wantBody: `{"model":"future-model","prompt":"scene","duration":7}`,
+		},
+		{
+			name: "AIMG MiMo audio passthrough", protocol: "aimg", model: "mimo-v2.5-tts", endpoint: "/audio/speech", body: `{"model":"mimo-v2.5-tts","input":"hello","voice":"mimo_default"}`,
+			wantPath: "/audio/speech", wantBody: `{"model":"mimo-v2.5-tts","input":"hello","voice":"mimo_default"}`,
 		},
 		{
 			name: "TokenDance non-MiniMax audio passthrough", protocol: "tokendance", model: "seed-tts-2.0", endpoint: "/audio/speech", body: `{"model":"seed-tts-2.0","input":"hello"}`,

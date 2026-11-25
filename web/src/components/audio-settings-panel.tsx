@@ -6,6 +6,8 @@ import { type ReactNode } from "react";
 import { GrokTtsVoiceSelect } from "@/components/grok-tts-voice-select";
 import { MiniMaxTtsVoiceSelect } from "@/components/minimax-tts-voice-select";
 import { ImageSettingsTheme } from "@/components/image-settings-panel";
+import { GatewayAudioSettings } from "@/components/gateway-settings";
+import { gatewaySpeechCaps } from "@/lib/ai-media-gateway";
 import { audioFormatOptions, audioSpeedLabel, audioVoiceOptions, glmTtsFormatOptions, glmTtsVoiceOptions, isGlmTtsModel, normalizeAudioFormatValue, normalizeAudioSpeedValue, normalizeAudioVoiceValue, normalizeGlmTtsFormat, normalizeGlmTtsSpeed, normalizeGlmTtsVoice } from "@/lib/audio-generation";
 import { grokTtsFormatOptions, grokTtsLanguageOptions, isGrok2APITtsConfig, normalizeGrokTtsFormat, normalizeGrokTtsLanguage, normalizeGrokTtsSpeed } from "@/lib/grok-tts";
 import { isMimoPresetTtsModel, isMimoTtsModel, isMimoVoiceCloneModel, isMimoVoiceDesignModel, mimoTtsFormatOptions, mimoTtsVoiceOptions, normalizeMimoTtsFormat, normalizeMimoTtsVoice } from "@/lib/mimo-tts";
@@ -18,7 +20,7 @@ import { channelProtocolForConfig, type AiConfig } from "@/stores/use-config-sto
 
 const speedOptions = ["0.75", "1", "1.25", "1.5"];
 
-export type AudioSettingKey = "audioVoice" | "audioFormat" | "audioSpeed" | "audioInstructions" | "grokTtsVoice" | "grokTtsLanguage" | "grokTtsFormat" | "grokTtsSpeed" | "glmTtsVoice" | "glmTtsFormat" | "glmTtsSpeed" | "mimoTtsVoice" | "mimoTtsFormat" | "mimoVoiceDesignPrompt" | "geminiTtsVoice" | "miniMaxTtsVoice" | "miniMaxTtsFormat" | "miniMaxTtsSpeed";
+export type AudioSettingKey = "audioVoice" | "audioFormat" | "audioSpeed" | "audioInstructions" | "audioLanguage" | "grokTtsVoice" | "grokTtsLanguage" | "grokTtsFormat" | "grokTtsSpeed" | "glmTtsVoice" | "glmTtsFormat" | "glmTtsSpeed" | "mimoTtsVoice" | "mimoTtsFormat" | "mimoVoiceDesignPrompt" | "geminiTtsVoice" | "miniMaxTtsVoice" | "miniMaxTtsFormat" | "miniMaxTtsSpeed";
 
 type AudioSettingsPanelProps = {
     config: AiConfig;
@@ -33,6 +35,18 @@ export function AudioSettingsPanel({ config, onConfigChange, theme, showTitle = 
     const grok = isGrok2APITtsConfig(config, model);
     const gemini = isGeminiTtsModel(model) && isGeminiConfig(config, model);
     const miniMax = isMiniMaxTtsConfig(config, model);
+    const gateway = gatewaySpeechCaps(config, model);
+
+    if (gateway) {
+        return (
+            <ImageSettingsTheme theme={theme}>
+                <div className={className} style={{ color: theme.node.text }} onMouseDown={(event) => event.stopPropagation()}>
+                    {showTitle ? <div className="text-lg font-semibold">音频设置</div> : null}
+                    <GatewayAudioSettings caps={gateway} config={config} model={model} onConfigChange={onConfigChange} theme={theme} />
+                </div>
+            </ImageSettingsTheme>
+        );
+    }
 
     return (
         <ImageSettingsTheme theme={theme}>

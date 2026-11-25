@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"sort"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -77,6 +78,59 @@ func AdminChannelModels(index *int, channel model.ModelChannel) ([]string, error
 		return nil, err
 	}
 	return fetchAdminChannelModels(resolved)
+}
+
+// AdminChannelModelSpecs 读取 AI Media Gateway 渠道的 /models，按模型名返回 {kind, capabilities}。
+func AdminChannelModelSpecs(index *int, channel model.ModelChannel) (map[string]json.RawMessage, error) {
+	resolved, err := resolveAdminChannel(index, channel)
+	if err != nil {
+		return nil, err
+	}
+	return fetchGatewayChannelModelSpecs(resolved)
+}
+
+func fetchGatewayChannelModelSpecs(channel model.ModelChannel) (map[string]json.RawMessage, error) {
+	if !strings.EqualFold(strings.TrimSpace(channel.Protocol), ModelChannelProtocolAIMG) {
+		return nil, safeMessageError{message: "只有 AI Media Gateway 渠道支持读取模型能力参数"}
+	}
+	request, err := http.NewRequest(http.MethodGet, BuildModelChannelURL(channel, "/models"), nil)
+	if err != nil {
+		return nil, err
+	}
+	SetModelChannelAuthHeader(request, channel)
+	response, err := adminModelHTTPClient.Do(request)
+	if err != nil {
+		return nil, safeMessageError{message: "读取模型失败：上游接口无响应或网络不可达"}
+	}
+	defer response.Body.Close()
+	body, _ := io.ReadAll(response.Body)
+	if response.StatusCode >= http.StatusBadRequest {
+		return nil, readAdminChannelError(body, response.StatusCode, "读取模型失败")
+	}
+	var payload struct {
+		Data []struct {
+			ID           string          `json:"id"`
+			Kind         string          `json:"kind"`
+			Capabilities json.RawMessage `json:"capabilities"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return nil, safeMessageError{message: "读取模型失败：网关返回的不是 JSON"}
+	}
+	result := map[string]json.RawMessage{}
+	for _, item := range payload.Data {
+		id := strings.TrimSpace(item.ID)
+		if id == "" || (item.Kind != "image" && item.Kind != "video" && item.Kind != "speech") {
+			continue
+		}
+		capabilities := item.Capabilities
+		if len(capabilities) == 0 || string(capabilities) == "null" {
+			capabilities = json.RawMessage("{}")
+		}
+		spec, _ := json.Marshal(map[string]json.RawMessage{"kind": json.RawMessage(strconv.Quote(item.Kind)), "capabilities": capabilities})
+		result[id] = spec
+	}
+	return result, nil
 }
 
 func AdminTestChannelModel(index *int, channel model.ModelChannel, modelName string) (string, error) {
@@ -1184,6 +1238,12 @@ func publicChannelInfos(channels []model.ModelChannel, availableModels, availabl
 				modelCapabilities[name] = capability
 			}
 		}
+		modelSpecs := map[string]json.RawMessage{}
+		for _, name := range models {
+			if spec, ok := channel.ModelSpecs[name]; ok {
+				modelSpecs[name] = spec
+			}
+		}
 		translated, _ := ParameterTranslationModels(channel.ParameterTranslation)
 		translated = filterEnabledModels(translated, models)
 		result = append(result, model.PublicModelChannelInfo{
@@ -1199,6 +1259,7 @@ func publicChannelInfos(channels []model.ModelChannel, availableModels, availabl
 			Remark:                     channel.Remark,
 
 			ModelCapabilities: modelCapabilities,
+			ModelSpecs:        modelSpecs,
 		})
 	}
 	return result

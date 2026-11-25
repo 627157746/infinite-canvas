@@ -4,7 +4,7 @@ import { CheckCircleOutlined, DeleteOutlined, FormatPainterOutlined, LoadingOutl
 import { json } from "@codemirror/lang-json";
 import { App, Button, Card, Col, Drawer, Flex, Form, Input, InputNumber, Modal, Row, Segmented, Select, Space, Switch, Table, Tabs, Tag, Typography } from "antd";
 import dynamic from "next/dynamic";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { EditorView } from "@uiw/react-codemirror";
 
 import { ChannelModelSelectorModal } from "@/components/channel-model-selector-modal";
@@ -13,7 +13,8 @@ import type { WorkflowChannelSettings } from "@/components/workflow/workflow-cha
 import { useAutoDLWorkflowNames } from "@/hooks/use-autodl-workflow";
 import { isWorkflowProtocol, modelChannelApiKeyUrls, modelChannelDefaultBaseUrls, modelChannelProtocolOptions } from "@/lib/model-channel";
 import { startTokenDanceOAuth } from "@/lib/tokendance-oauth";
-import { fetchAdminSettings, fetchChannelModels, measureAdminStorageProvider, saveAdminSettings, testChannelModel, type AdminModelChannel, type AdminModelCost, type AdminSettings, type AdminStorageProvider } from "@/services/api/admin";
+import { AIMG_PROTOCOL, gatewayModelCapabilities, pickGatewayModelSpecs, type GatewayModelSpecs } from "@/lib/ai-media-gateway";
+import { fetchAdminSettings, fetchChannelModels, fetchChannelModelSpecs, measureAdminStorageProvider, saveAdminSettings, testChannelModel, type AdminModelChannel, type AdminModelCost, type AdminSettings, type AdminStorageProvider } from "@/services/api/admin";
 import { clearStorageConfigCache as clearMediaStorageConfigCache } from "@/services/file-storage";
 import { clearStorageConfigCache as clearImageStorageConfigCache } from "@/services/image-storage";
 import { useUserStore } from "@/stores/use-user-store";
@@ -70,6 +71,7 @@ export default function AdminSettingsPage() {
     const [editorMode, setEditorMode] = useState<Record<SettingsTabKey, EditorMode>>({ public: "visual", private: "visual" });
     const [jsonText, setJsonText] = useState<Record<SettingsTabKey, string>>({ public: "", private: "" });
     const [channels, setChannels] = useState<AdminModelChannel[]>([]);
+    const gatewaySpecsRef = useRef<GatewayModelSpecs | null>(null);
     const [channelForm] = Form.useForm<AdminModelChannel>();
     const [editingChannelIndex, setEditingChannelIndex] = useState<number | null>(null);
     const [isChannelDrawerOpen, setIsChannelDrawerOpen] = useState(false);
@@ -255,7 +257,7 @@ export default function AdminSettingsPage() {
 
     const saveChannel = async () => {
         const values = await channelForm.validateFields();
-        const channel = normalizeChannel(isWorkflowProtocol(values.protocol) ? { ...workflowChannelDraft, ...channelForm.getFieldsValue(true), ...values } : { ...values, modelCapabilities: channelForm.getFieldValue("modelCapabilities"), parameterTranslation: channelForm.getFieldValue("parameterTranslation") });
+        const channel = normalizeChannel(isWorkflowProtocol(values.protocol) ? { ...workflowChannelDraft, ...channelForm.getFieldsValue(true), ...values } : { ...values, modelCapabilities: channelForm.getFieldValue("modelCapabilities"), modelSpecs: channelForm.getFieldValue("modelSpecs"), parameterTranslation: channelForm.getFieldValue("parameterTranslation") });
         if (channel.protocol === "runninghub" && (!channel.baseUrl.trim() || (!channel.apiKey.trim() && editingChannelIndex === null))) {
             message.error("请填写 RunningHub Base URL 和积分 API Key");
             return;
@@ -279,6 +281,10 @@ export default function AdminSettingsPage() {
             message.warning("请先填写 API Key");
             return;
         }
+        if (channel.protocol === AIMG_PROTOCOL) {
+            gatewaySpecsRef.current = await fetchChannelModelSpecs(token, { index: editingChannelIndex ?? undefined, channel: normalizeChannel(channel) });
+            return Object.keys(gatewaySpecsRef.current || {}).sort((a, b) => a.localeCompare(b));
+        }
         return fetchChannelModels(token, { index: editingChannelIndex ?? undefined, channel: normalizeChannel(channel) });
     };
 
@@ -287,7 +293,13 @@ export default function AdminSettingsPage() {
     const closeChannelModelSelector = () => setIsModelSelectorOpen(false);
 
     const confirmChannelModelSelector = (models: string[], modelCapabilities: ModelCapabilities, parameterTranslation: string) => {
-        channelForm.setFieldsValue({ models, modelCapabilities, parameterTranslation });
+        if (channelForm.getFieldValue("protocol") === AIMG_PROTOCOL) {
+            const specs = pickGatewayModelSpecs({ ...channelForm.getFieldValue("modelSpecs"), ...gatewaySpecsRef.current }, models);
+            channelForm.setFieldsValue({ models, modelCapabilities: { ...modelCapabilities, ...gatewayModelCapabilities(specs) }, modelSpecs: specs, parameterTranslation });
+        } else {
+            channelForm.setFieldsValue({ models, modelCapabilities, parameterTranslation });
+        }
+        gatewaySpecsRef.current = null;
         rememberModels(models);
         closeChannelModelSelector();
     };
@@ -1272,6 +1284,7 @@ function normalizeChannel(item: Partial<AdminModelChannel> = {}): AdminModelChan
         apiKey: item.apiKey || "",
         models: item.models || [],
         modelCapabilities: item.modelCapabilities || {},
+        ...(item.protocol === AIMG_PROTOCOL && item.modelSpecs ? { modelSpecs: item.modelSpecs } : {}),
         parameterTranslation: item.parameterTranslation || "",
         uploadApiKey: item.uploadApiKey || "",
         bridgeId: item.bridgeId || "",

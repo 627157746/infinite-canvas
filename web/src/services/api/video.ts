@@ -13,6 +13,7 @@ import { isKIEGrokVideoModel, isKIEKlingV3Config, kieKlingOmniVariant } from "./
 import { autoDLBaseUrl, getAutoDLCapabilities } from "@/lib/autodl";
 import { fetchAutoDLWorkflow } from "./autodl";
 import { isAgnesVideoV25Model, isCogVideoX3Model, isWan3VideoModel, modelKey, normalizeCogVideoX3Duration, supportsVideoAudioGeneration, videoDurationOptionsForModel } from "@/lib/video-model-capabilities";
+import { gatewaySupportsFrames, gatewayVideoCaps, gatewayVideoDurations, gatewayVideoMode, gatewayVideoModes, pickGatewayOption, type GatewayVideoCaps } from "@/lib/ai-media-gateway";
 import { resolveMediaUrl, uploadMediaFile, uploadRemoteMediaToServer } from "@/services/file-storage";
 import { autoSyncToCloud, imageToDataUrl, resolveImageUrl } from "@/services/image-storage";
 import { buildApiUrl, channelIdForActiveModel, channelProtocolForConfig, directAIProviderForConfig, localChannelForActiveModel, type AiConfig, type VideoElementReference } from "@/stores/use-config-store";
@@ -150,7 +151,7 @@ export async function createVideoGenerationTask(config: AiConfig, prompt: string
             ? geminiActionUrl(channel?.baseUrl || config.baseUrl, model, "predictLongRunning")
             : !accountProxy && isMiniMaxH3Config(config, model)
                 ? miniMaxApiUrl(config, "/v2/video_generation")
-                : aiApiUrl(config, !accountProxy && (isGrok2APIVideoConfig(config, model) || isCogVideoX3Model(model)) ? "/videos/generations" : "/videos");
+                : aiApiUrl(config, !accountProxy && !gatewayVideoCaps(config, model) && (isGrok2APIVideoConfig(config, model) || isCogVideoX3Model(model)) ? "/videos/generations" : "/videos");
         const requestBody = !accountProxy && isGeminiConfig(config, model) ? withoutVideoModel(body) : body;
         createOptions.signal?.throwIfAborted();
         if (accountProxy) createOptions.onServerTask?.();
@@ -415,6 +416,8 @@ async function createAgnesVideoV25RequestBody(config: AiConfig, model: string, p
 }
 
 async function createVideoRequestBody(config: AiConfig, model: string, prompt: string, input: Required<VideoReferenceInput>) {
+    const gateway = gatewayVideoCaps(config, model);
+    if (gateway) return createGatewayVideoRequestBody(gateway, config, model, prompt, input);
     if (videoChannelProtocol(config, model) === "autodl") {
         const capabilities = getAutoDLCapabilities(await fetchAutoDLWorkflow(autoDLBaseUrl(config, model), model));
         if (!capabilities) throw new VideoRequestError("当前 AutoDL 工作流尚未适配");
@@ -521,6 +524,38 @@ async function createVideoRequestBody(config: AiConfig, model: string, prompt: s
     videoFiles.forEach((file) => body.append("video_reference[]", file));
     const audioFiles = kling ? [] : await Promise.all(input.audioReferences.map(mediaReferenceToFormValue));
     audioFiles.forEach((file) => body.append("audio_reference[]", file));
+    return body;
+}
+
+// AI Media Gateway：只发送模型能力里声明的字段，素材按能力上限截取。
+async function createGatewayVideoRequestBody(caps: GatewayVideoCaps, config: AiConfig, model: string, prompt: string, input: Required<VideoReferenceInput>) {
+    const mode = gatewayVideoMode(caps, config.videoMode);
+    const frames = gatewaySupportsFrames(caps, mode);
+    const firstFrame = frames && caps.supports_first_frame ? input.firstFrame : null;
+    const lastFrame = frames && caps.supports_last_frame ? input.lastFrame : null;
+    const references = input.references.slice(0, caps.max_references || 0);
+    const videos = input.videoReferences.slice(0, caps.max_reference_videos || 0);
+    const audios = input.audioReferences.slice(0, caps.max_reference_audios || 0);
+    if (caps.requires_images && !firstFrame && !lastFrame && !references.length) throw new VideoRequestError("当前模型需要至少一张图片（首帧或参考图）");
+    const durations = gatewayVideoDurations(caps);
+    const seconds = durations.length ? pickGatewayOption(config.videoSeconds, durations, caps.duration_default) : config.videoSeconds;
+    const ratio = pickGatewayOption(config.size, caps.ratios, caps.ratio_default);
+    const resolution = pickGatewayOption(config.vquality, caps.resolutions, caps.resolution_default);
+    const negativePrompt = config.videoNegativePrompt?.trim();
+    const body = new FormData();
+    body.append("model", model);
+    body.append("prompt", prompt);
+    if (gatewayVideoModes(caps).length > 1 && mode) body.append("mode", mode);
+    if (seconds) body.append("seconds", seconds);
+    if (ratio) body.append("ratio", ratio);
+    if (resolution) body.append("resolution_name", resolution);
+    if (caps.supports_negative_prompt && negativePrompt) body.append("negative_prompt", negativePrompt);
+    if (caps.supports_audio) body.append("video_generate_audio", String(boolConfig(config.videoGenerateAudio, false)));
+    (await Promise.all(references.map(imageReferenceToFormValue))).forEach((file) => body.append("input_reference[]", file));
+    if (firstFrame) body.append("first_frame_url", await imageReferenceToFormValue(firstFrame));
+    if (lastFrame) body.append("last_frame_url", await imageReferenceToFormValue(lastFrame));
+    (await Promise.all(videos.map(mediaReferenceToFormValue))).forEach((file) => body.append("video_reference[]", file));
+    (await Promise.all(audios.map(mediaReferenceToFormValue))).forEach((file) => body.append("audio_reference[]", file));
     return body;
 }
 

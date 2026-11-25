@@ -6,7 +6,10 @@ import { Settings2 } from "lucide-react";
 import { Button } from "antd";
 
 import { AudioSettingsPanel, type AudioSettingKey } from "@/components/audio-settings-panel";
+import { gatewaySpeechCaps, gatewaySpeechVoice, pickGatewayOption, type GatewaySpeechCaps } from "@/lib/ai-media-gateway";
 import { isAutoDLConfig } from "@/lib/autodl";
+import { useGatewayVoices } from "@/components/gateway-settings";
+import { type GatewayVoice } from "@/services/api/audio";
 import { audioFormatLabel, audioSpeedLabel, audioVoiceLabel, glmTtsVoiceLabel, isGlmTtsModel, normalizeGlmTtsFormat, normalizeGlmTtsSpeed } from "@/lib/audio-generation";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { isGrok2APITtsConfig, normalizeGrokTtsFormat, normalizeGrokTtsLanguage, normalizeGrokTtsSpeed } from "@/lib/grok-tts";
@@ -62,13 +65,18 @@ export function CanvasAudioSettingsPopover({ config, onConfigChange, resourceOpt
 
     const audioOptions = useMemo(() => resourceOptions.filter((item) => item.kind === "audio"), [resourceOptions]);
     const cloneAudioNodeId = validCloneAudioNodeId(isAutoDLConfig(config) ? metadata?.referenceAudioNodeId : metadata?.mimoVoiceCloneAudioNodeId, audioOptions);
+    // 网关模型选了音色库音色（vc_ 开头）时才拉音色列表，用来在按钮上显示音色名。
+    const gatewayModel = config.model || config.audioModel || "";
+    const gatewayCaps = gatewaySpeechCaps(config, gatewayModel);
+    const gatewayVoiceId = gatewayCaps ? gatewaySpeechVoice(gatewayCaps, config.audioVoice) : "";
+    const { voices: gatewayVoices } = useGatewayVoices(config, gatewayModel, gatewayVoiceId.startsWith("vc_") ? gatewayCaps : null);
     const panel = open && buttonRect ? <AudioSettingsPortal buttonRect={buttonRect} panelRef={panelRef} placement={placement} theme={theme} config={config} onConfigChange={onConfigChange} audioOptions={audioOptions} cloneAudioNodeId={cloneAudioNodeId} onMetadataChange={onMetadataChange} /> : null;
 
     return (
         <>
             <span ref={buttonRef} className="inline-flex min-w-0">
                 <Button size="small" type="text" className={buttonClassName || "!h-8 !max-w-[170px] !justify-start !rounded-full !px-2.5"} style={{ background: theme.node.fill, color: theme.node.text }} icon={<Settings2 className="size-3.5" />} onClick={() => setOpen((current) => !current)}>
-                    <span className="truncate">{audioSettingsSummary(config, cloneAudioNodeId, audioOptions)}</span>
+                    <span className="truncate">{audioSettingsSummary(config, cloneAudioNodeId, audioOptions, gatewayVoices)}</span>
                 </Button>
             </span>
             {panel}
@@ -126,8 +134,10 @@ function validCloneAudioNodeId(value: string | undefined, options: CanvasVideoRe
     return options.length === 1 ? options[0].nodeId : "";
 }
 
-function audioSettingsSummary(config: AiConfig, cloneAudioNodeId: string, audioOptions: CanvasVideoResourceOption[]) {
+function audioSettingsSummary(config: AiConfig, cloneAudioNodeId: string, audioOptions: CanvasVideoResourceOption[], gatewayVoices: GatewayVoice[] = []) {
     const model = config.model || config.audioModel || "";
+    const gateway = gatewaySpeechCaps(config, model);
+    if (gateway) return gatewayAudioSummary(gateway, config, gatewayVoices);
     if (isGeminiTtsModel(model) && isGeminiConfig(config, model)) return normalizeGeminiTtsVoice(config.geminiTtsVoice);
     if (isMiniMaxTtsConfig(config, model)) {
         const voice = normalizeMiniMaxTtsVoice(config.miniMaxTtsVoice);
@@ -141,4 +151,22 @@ function audioSettingsSummary(config: AiConfig, cloneAudioNodeId: string, audioO
     if (isMimoVoiceDesignModel(model)) return `音色设计 · ${format}`;
     if (isMimoVoiceCloneModel(model)) return `${audioOptions.find((item) => item.nodeId === cloneAudioNodeId)?.label || "参考音频"} · ${format}`;
     return format;
+}
+
+// AI Media Gateway 模型：声音按实际会发送的值显示（与 buildGatewaySpeechRequest 同一规则），格式、语速取网关声明的范围，不显示画布自带的默认值。
+function gatewayAudioSummary(caps: GatewaySpeechCaps, config: AiConfig, voices: GatewayVoice[]) {
+    const mode = caps.voice_mode || "preset";
+    const parts: string[] = [];
+    if (mode === "prompt") parts.push("音色描述");
+    else if (mode !== "none") {
+        const voice = gatewaySpeechVoice(caps, config.audioVoice);
+        parts.push(voices.find((item) => item.id === voice)?.name || voice || "默认音色");
+    }
+    const format = pickGatewayOption(config.audioFormat, caps.formats);
+    if (format) parts.push(format.toUpperCase());
+    if (caps.speed?.mode && caps.speed.mode !== "none") {
+        const speed = Math.min(caps.speed.max || 2, Math.max(caps.speed.min || 0.5, Number(config.audioSpeed) || 1));
+        parts.push(`${speed}x`);
+    }
+    return parts.join(" · ") || "音频设置";
 }

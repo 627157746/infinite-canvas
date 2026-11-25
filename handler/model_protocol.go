@@ -146,14 +146,15 @@ var builtinAIProtocols = []aiProtocolAdapter{
 	},
 	{
 		id: service.ModelChannelProtocolMiMo,
-		path: func(_ model.ModelChannel, modelName string, path string) (string, bool) {
-			if service.IsMiMoTTSModelName(modelName) && path == "/audio/speech" {
+		// AI Media Gateway 渠道自己实现 /audio/speech，同名 MiMo 模型不能改写成小米直连协议。
+		path: func(channel model.ModelChannel, modelName string, path string) (string, bool) {
+			if !service.IsAIMGChannel(channel) && service.IsMiMoTTSModelName(modelName) && path == "/audio/speech" {
 				return "/chat/completions", true
 			}
 			return path, false
 		},
 		prepare: func(input aiProtocolRequest) (aiProtocolRequest, bool, error) {
-			if input.mode != aiProtocolProxyRequest || !service.IsMiMoTTSModelName(input.modelName) || input.endpoint != "/audio/speech" {
+			if input.mode != aiProtocolProxyRequest || service.IsAIMGChannel(input.channel) || !service.IsMiMoTTSModelName(input.modelName) || input.endpoint != "/audio/speech" {
 				return input, false, nil
 			}
 			input.failureLabel = "MiMo TTS"
@@ -161,7 +162,10 @@ var builtinAIProtocols = []aiProtocolAdapter{
 			input.body, input.contentType, err = normalizeMiMoTTSBody(input.body, input.contentType, input.modelName)
 			return input, true, err
 		},
-		copyResponse: func(w http.ResponseWriter, response *http.Response, _ *http.Request, _ model.ModelChannel, context aiLogContext, onFailure func()) bool {
+		copyResponse: func(w http.ResponseWriter, response *http.Response, _ *http.Request, channel model.ModelChannel, context aiLogContext, onFailure func()) bool {
+			if service.IsAIMGChannel(channel) {
+				return false
+			}
 			return copyMiMoTTSResponse(w, response, context, onFailure)
 		},
 	},

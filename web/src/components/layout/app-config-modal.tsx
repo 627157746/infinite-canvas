@@ -9,7 +9,8 @@ import type { WorkflowChannelSettings } from "@/components/workflow/workflow-cha
 import { GrokTtsVoiceSelect } from "@/components/grok-tts-voice-select";
 import { MiniMaxTtsVoiceSelect } from "@/components/minimax-tts-voice-select";
 import { ModelPicker } from "@/components/model-picker";
-import { fetchImageModels } from "@/services/api/image";
+import { fetchGatewayModelSpecs, fetchImageModels } from "@/services/api/image";
+import { AIMG_PROTOCOL, gatewayModelCapabilities, pickGatewayModelSpecs, type GatewayModelSpecs } from "@/lib/ai-media-gateway";
 import { fetchUserConfig, measureUserStorageProvider, syncUserModelConfig, syncUserStorageProvider } from "@/services/api/user-config";
 import { clearStorageConfigCache as clearFileStorageCache } from "@/services/file-storage";
 import { clearStorageConfigCache as clearImageStorageCache, defaultUserStorageProvider, defaultUserWebDAVStorageProvider, loadStorageConfig, loadUserS3StorageProvider, loadUserWebDAVStorageProvider, saveUserStorageProvider, saveUserWebDAVStorageProvider, type UserStorageProvider } from "@/services/image-storage";
@@ -88,6 +89,7 @@ export function AppConfigModal() {
     const miniMaxTts = isMiniMaxTtsConfig(audioConfig, config.audioModel);
     const officialMiniMaxTts = miniMaxTts && channelProtocolForConfig(audioConfig) === "minimax";
     const modelSelectChannel = normalizeLocalChannels(config).find((channel) => channel.id === modelSelectChannelId);
+    const gatewaySpecsRef = useRef<GatewayModelSpecs | null>(null);
 
     useEffect(() => {
         setParameterTranslation(undefined);
@@ -323,7 +325,13 @@ export function AppConfigModal() {
             await useChannelTranslationStore.getState().save(accountId, modelSelectChannelId, source);
             if ((useUserStore.getState().user?.id || "guest") !== accountId) throw new Error("登录状态已变化");
         }
-        patchLocalChannel(modelSelectChannelId, { models, modelCapabilities });
+        if (modelSelectChannel?.protocol === AIMG_PROTOCOL) {
+            const specs = pickGatewayModelSpecs({ ...modelSelectChannel.modelSpecs, ...gatewaySpecsRef.current }, models);
+            patchLocalChannel(modelSelectChannelId, { models, modelCapabilities: { ...modelCapabilities, ...gatewayModelCapabilities(specs) }, modelSpecs: specs });
+        } else {
+            patchLocalChannel(modelSelectChannelId, { models, modelCapabilities });
+        }
+        gatewaySpecsRef.current = null;
         closeLocalModelSelector();
     };
 
@@ -385,6 +393,10 @@ export function AppConfigModal() {
         if (!modelSelectChannel.baseUrl.trim() || !modelSelectChannel.apiKey.trim()) {
             message.error("请先填写该渠道的 Base URL 和 API Key");
             return;
+        }
+        if (modelSelectChannel.protocol === AIMG_PROTOCOL) {
+            gatewaySpecsRef.current = await fetchGatewayModelSpecs(configForLocalChannel(config, modelSelectChannel));
+            return uniqueModels(Object.keys(gatewaySpecsRef.current));
         }
         return uniqueModels(await fetchImageModels(configForLocalChannel(config, modelSelectChannel)));
     };
