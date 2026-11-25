@@ -175,7 +175,7 @@ function LibraryTab({ onInsert }: { onInsert: (payload: InsertAssetPayload) => v
             ) : items.length ? (
                 <div className="grid grid-cols-4 gap-3">
                     {items.map((asset) => (
-                        <PickerCard key={asset.id} title={asset.title} kind={asset.type} cover={asset.coverUrl} loading={inserting === asset.id} onClick={() => void handleInsert(asset)} />
+                        <PickerCard key={asset.id} title={asset.title} kind={asset.type} cover={asset.coverUrl} videoUrl={asset.type === "video" ? asset.url : ""} loading={inserting === asset.id} onClick={() => void handleInsert(asset)} />
                     ))}
                 </div>
             ) : (
@@ -191,15 +191,19 @@ function LibraryTab({ onInsert }: { onInsert: (payload: InsertAssetPayload) => v
     );
 }
 
-function PickerCard({ title, kind, cover, loading, onClick }: { title: string; kind: string; cover: string; loading?: boolean; onClick: () => void }) {
+function PickerCard({ title, kind, cover, videoUrl, loading, onClick }: { title: string; kind: string; cover: string; videoUrl?: string; loading?: boolean; onClick: () => void }) {
+    const [previewOpen, setPreviewOpen] = useState(false);
     return (
-        <button
-            type="button"
+        <>
+        <div
+            role="button"
+            tabIndex={0}
             className="group relative cursor-pointer overflow-hidden rounded-lg border border-stone-200 bg-white text-left transition hover:border-stone-400 hover:shadow-md dark:border-stone-700 dark:bg-stone-900 dark:hover:border-stone-500"
-            onClick={onClick}
-            disabled={loading}
+            onClick={loading ? undefined : onClick}
         >
-            {cover ? (
+            {videoUrl ? (
+                <video src={videoUrl + "#t=0.1"} poster={cover || undefined} muted playsInline preload="metadata" className="aspect-[4/3] w-full bg-black object-cover" />
+            ) : cover ? (
                 <img src={cover} alt={title} className="aspect-[4/3] w-full object-cover" />
             ) : (
                 <div className="flex aspect-[4/3] items-center justify-center bg-stone-100 p-3 text-center text-xs leading-5 text-stone-500 dark:bg-stone-800 dark:text-stone-400">{title}</div>
@@ -216,7 +220,25 @@ function PickerCard({ title, kind, cover, loading, onClick }: { title: string; k
                 </div>
             )}
             <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-stone-950/0 text-sm font-medium text-white opacity-0 transition group-hover:bg-stone-950/55 group-hover:opacity-100">插入</div>
-        </button>
+            {videoUrl ? (
+                <Button
+                    size="small"
+                    className="!absolute right-2 top-2 z-10 opacity-0 transition group-hover:opacity-100"
+                    onClick={(event) => {
+                        event.stopPropagation();
+                        setPreviewOpen(true);
+                    }}
+                >
+                    预览
+                </Button>
+            ) : null}
+        </div>
+        {videoUrl ? (
+            <Modal title={title} open={previewOpen} onCancel={() => setPreviewOpen(false)} footer={null} width={720} destroyOnHidden>
+                <video src={videoUrl} poster={cover || undefined} controls autoPlay playsInline className="aspect-video w-full rounded-lg bg-black" />
+            </Modal>
+        ) : null}
+        </>
     );
 }
 
@@ -390,7 +412,7 @@ function MyAssetsTab({ onInsert }: { onInsert: (payload: InsertAssetPayload) => 
             {visible.length ? (
                 <div className="grid grid-cols-4 gap-3">
                     {visible.map((asset) => (
-                        <PickerCard key={asset.id} title={asset.title} kind={asset.kind} cover={asset.coverUrl || (asset.kind === "image" ? asset.data.dataUrl : "")} onClick={() => handleInsert(asset)} />
+                        <PickerCard key={asset.id} title={asset.title} kind={asset.kind} cover={asset.coverUrl || (asset.kind === "image" ? asset.data.dataUrl : "")} videoUrl={asset.kind === "video" ? asset.data.url : ""} onClick={() => handleInsert(asset)} />
                     ))}
                 </div>
             ) : (
