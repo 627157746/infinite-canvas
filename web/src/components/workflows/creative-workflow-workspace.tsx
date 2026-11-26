@@ -5,6 +5,7 @@ import { AlertCircle, ArrowDown, ArrowUp, Bot, CheckCircle2, Copy, Download, Edi
 import localforage from "localforage";
 import { nanoid } from "nanoid";
 import { saveAs } from "file-saver";
+import copyToClipboard from "copy-to-clipboard";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { ImageSettingsPanel } from "@/components/image-settings-panel";
@@ -999,7 +1000,7 @@ export function CreativeWorkflowWorkspace({
                         </div>
                         <div className="grid grid-cols-1 gap-3 lg:grid-cols-2 2xl:grid-cols-3">
                             {workflowTasks.map((task) => (
-                                <WorkflowTaskCard key={task.id} task={task} now={now} onCopyPrompt={() => void navigator.clipboard.writeText(task.prompt)} onDownload={(image, index) => saveAs(image.imageUrl, `workflow-task-${index + 1}.png`)} />
+                                <WorkflowTaskCard key={task.id} task={task} now={now} onCopyPrompt={() => copyToClipboard(task.prompt)} onDownload={(image, index) => saveAs(image.imageUrl, `workflow-task-${index + 1}.png`)} />
                             ))}
                         </div>
                     </section>
@@ -1026,7 +1027,7 @@ export function CreativeWorkflowWorkspace({
                                             <Tag className="m-0 text-[10px]">{formatDuration(result.durationMs)}</Tag>
                                         </div>
                                         <div className="flex justify-end gap-1">
-                                            <Button size="small" icon={<Copy className="size-3.5" />} onClick={() => void navigator.clipboard.writeText(result.prompt)} />
+                                            <Button size="small" icon={<Copy className="size-3.5" />} onClick={() => copyToClipboard(result.prompt)} />
                                             <Button size="small" icon={<Download className="size-3.5" />} onClick={() => saveAs(result.imageUrl, `workflow-${index + 1}.png`)} />
                                         </div>
                                     </div>
@@ -1245,7 +1246,7 @@ export function CreativeWorkflowWorkspace({
                             <div className="rounded-lg border border-stone-200 p-3 dark:border-stone-800">
                                 <div className="mb-2 flex items-center justify-between">
                                     <span className="text-sm font-medium">生成提示词预览</span>
-                                    <Button size="small" icon={<Copy className="size-3.5" />} onClick={() => void navigator.clipboard.writeText(renderedPrompt)}>
+                                    <Button size="small" icon={<Copy className="size-3.5" />} onClick={() => copyToClipboard(renderedPrompt)}>
                                         复制
                                     </Button>
                                 </div>
@@ -1290,7 +1291,7 @@ export function CreativeWorkflowWorkspace({
                                                         isLast={index === seriesDrafts.length - 1}
                                                         onChange={(patch) => updateSeriesDraft(draft.id, patch)}
                                                         onGenerate={() => void runSeriesDraft(draft, index)}
-                                                        onCopy={() => void navigator.clipboard.writeText(draft.prompt)}
+                                                        onCopy={() => copyToClipboard(draft.prompt)}
                                                         onMoveUp={() => moveSeriesDraft(draft.id, -1)}
                                                         onMoveDown={() => moveSeriesDraft(draft.id, 1)}
                                                         onDelete={() => deleteSeriesDraft(draft.id)}

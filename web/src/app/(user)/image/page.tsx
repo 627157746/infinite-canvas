@@ -30,6 +30,8 @@ import { useEffect, useRef, useState, useSyncExternalStore, type PointerEvent as
 import { App, Button, Checkbox, Drawer, Empty, Image, Input, Modal, Segmented, Tag, Typography } from "antd";
 import localforage from "localforage";
 import { saveAs } from "file-saver";
+import copy from "copy-to-clipboard";
+import { clipboardReadError, usePasteDropFiles } from "@/hooks/use-paste-drop-files";
 
 import { ImageSettingsPanel, imageFormatLabel, imageQualityLabel, imageSizeLabel, imageSizeOptions } from "@/components/image-settings-panel";
 import { ModelPicker } from "@/components/model-picker";
@@ -324,7 +326,7 @@ export default function ImagePage() {
         persistWorkflowButtonPosition(finalPos);
     };
 
-    const addReferences = async (files?: FileList | null) => {
+    const addReferences = async (files?: FileList | File[] | null) => {
         const imageFiles = Array.from(files || []).filter((file) => file.type.startsWith("image/"));
         if (!imageFiles.length) return;
         setUploadingCount(imageFiles.length);
@@ -345,6 +347,8 @@ export default function ImagePage() {
             setUploadingCount(0);
         }
     };
+
+    usePasteDropFiles((files) => void addReferences(files));
 
     const addReferencesFromClipboard = async () => {
         try {
@@ -370,7 +374,7 @@ export default function ImagePage() {
                 setUploadingCount(0);
             }
         } catch {
-            message.error("剪切板里没有可读取的图片");
+            message.error(clipboardReadError("剪切板里没有可读取的图片"));
             setUploadingCount(0);
         }
     };
@@ -401,7 +405,7 @@ export default function ImagePage() {
             setPrompt(text);
             message.success("已读取剪切板文本");
         } catch {
-            message.error("剪切板里没有可读取的文本");
+            message.error(clipboardReadError("剪切板里没有可读取的文本"));
         }
     };
 
@@ -1079,7 +1083,7 @@ export default function ImagePage() {
     };
 
     const copyPrompt = async (text: string) => {
-        await navigator.clipboard.writeText(text);
+        copy(text);
         message.success("提示词已复制");
     };
 

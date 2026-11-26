@@ -7,6 +7,8 @@ import { App, Button, Checkbox, Empty, Input, Modal, Switch, Tag, Typography } f
 import localforage from "localforage";
 import { nanoid } from "nanoid";
 import { saveAs } from "file-saver";
+import copy from "copy-to-clipboard";
+import { clipboardReadError, usePasteDropFiles } from "@/hooks/use-paste-drop-files";
 
 import { AssetPickerModal, type InsertAssetPayload } from "@/app/(user)/canvas/components/asset-picker-modal";
 import { ModelPicker } from "@/components/model-picker";
@@ -274,7 +276,7 @@ export default function VideoPage() {
             setPrompt(text);
             message.success("已读取剪切板文本");
         } catch {
-            message.error("剪切板里没有可读取的文本");
+            message.error(clipboardReadError("剪切板里没有可读取的文本"));
         }
     };
 
@@ -341,7 +343,7 @@ export default function VideoPage() {
             updateElementReferences(elementIndex, (value) => [...value, ...next]);
             message.success(`已读取 ${next.length} 个元素图片`);
         } catch {
-            message.error("剪贴板里没有可读取的图片");
+            message.error(clipboardReadError("剪贴板里没有可读取的图片"));
         }
     };
 
@@ -353,7 +355,7 @@ export default function VideoPage() {
         updateElementReferences(elementIndex, (value) => moveListItem(value, index, offset));
     };
 
-    const addReferences = async (files?: FileList | null) => {
+    const addReferences = async (files?: FileList | File[] | null) => {
         const selectedFiles = Array.from(files || []);
         const unsupported = isKlingWorkbench ? selectedFiles.filter((file) => (!file.type.startsWith("image/") || referenceImageLimit === 0) && (!file.type.startsWith("video/") || !klingAcceptsVideoReferences)) : selectedFiles.filter((file) => !file.type.startsWith("image/") && !file.type.startsWith("video/") && !isSupportedAudioFile(file));
         if (unsupported.length) message.warning(isKlingWorkbench ? `当前 Kling 模型仅支持${klingAcceptsVideoReferences ? "参考图和参考视频" : "参考图"}` : "已忽略不支持的参考素材，请使用图片、mp4/mov 视频或 mp3/wav 音频");
@@ -392,6 +394,8 @@ export default function VideoPage() {
             hideLoading?.();
         }
     };
+
+    usePasteDropFiles((files) => void addReferences(files));
 
     const uploadFrameReference = async (slot: "first" | "last", files?: FileList | null) => {
         const file = Array.from(files || []).find((item) => item.type.startsWith("image/"));
@@ -463,7 +467,7 @@ export default function VideoPage() {
             setReferences((value) => [...value, ...nextReferences].slice(0, referenceImageLimit));
             message.success(`已读取 ${nextReferences.length} 张参考图`);
         } catch {
-            message.error("剪切板里没有可读取的图片");
+            message.error(clipboardReadError("剪切板里没有可读取的图片"));
         }
     };
 
@@ -490,7 +494,7 @@ export default function VideoPage() {
                 hideLoading();
             }
         } catch {
-            message.error("剪切板里没有可读取的图片");
+            message.error(clipboardReadError("剪切板里没有可读取的图片"));
         }
     };
 
@@ -513,7 +517,7 @@ export default function VideoPage() {
             setVideoReferences((value) => [...value, ...nextVideoReferences].slice(0, videoReferenceLimit));
             message.success(`已读取 ${nextVideoReferences.length} 个参考视频`);
         } catch {
-            message.error("剪切板里没有可读取的视频");
+            message.error(clipboardReadError("剪切板里没有可读取的视频"));
         }
     };
 
@@ -535,7 +539,7 @@ export default function VideoPage() {
             setAudioReferences((value) => [...value, ...nextAudioReferences].slice(0, referenceLimits.audios));
             message.success(`已读取 ${nextAudioReferences.length} 个参考音频`);
         } catch {
-            message.error("剪切板里没有可读取的音频");
+            message.error(clipboardReadError("剪切板里没有可读取的音频"));
         }
     };
 
@@ -2330,7 +2334,7 @@ function buildDisplayConfig(config: AiConfig, model: string): GenerationLogConfi
 }
 
 async function copyPrompt(text: string, success: (content: string) => void) {
-    await navigator.clipboard.writeText(text);
+    copy(text);
     success("提示词已复制");
 }
 

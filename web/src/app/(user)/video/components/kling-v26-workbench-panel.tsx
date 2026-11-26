@@ -6,6 +6,7 @@ import { ModelPicker } from "@/components/model-picker";
 import { boolConfig } from "@/lib/seedance-video";
 import type { AiConfig, VideoElementItem, VideoElementReference, VideoMultiPromptItem } from "@/stores/use-config-store";
 import type { ReferenceImage } from "@/types/image";
+import { clipboardReadError } from "@/hooks/use-paste-drop-files";
 
 type UpdateAiConfig = <K extends keyof AiConfig>(key: K, value: AiConfig[K]) => void;
 type WorkbenchLayout = "side" | "bottom";
@@ -217,7 +218,7 @@ export function KlingV26WorkbenchPanel({
             updateMultiPrompt(index, { prompt: text });
             message.success("已读取剪切板文本");
         } catch {
-            message.error("剪切板里没有可读取的文本");
+            message.error(clipboardReadError("剪切板里没有可读取的文本"));
         }
     };
 
@@ -231,7 +232,7 @@ export function KlingV26WorkbenchPanel({
             onNegativePromptChange(text);
             message.success("已读取剪切板文本");
         } catch {
-            message.error("剪切板里没有可读取的文本");
+            message.error(clipboardReadError("剪切板里没有可读取的文本"));
         }
     };
 
