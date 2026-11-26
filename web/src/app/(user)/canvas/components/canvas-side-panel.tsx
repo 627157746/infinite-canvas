@@ -528,7 +528,7 @@ function PromptGroup({ category, keyword, open, theme, onToggle, onView, onInser
 function PromptRow({ item, theme, onView, onInsert }: { item: Prompt; theme: CanvasTheme; onView: () => void; onInsert: () => void }) {
     return (
         <div className="group relative flex items-center gap-2.5 rounded-lg px-2 py-2 transition hover:bg-black/5 dark:hover:bg-white/5">
-            {item.coverUrl ? <img src={item.coverUrl} alt="" className="size-10 shrink-0 rounded-md object-cover" loading="lazy" /> : <span className="grid size-10 shrink-0 place-items-center rounded-md" style={{ background: theme.node.panel }}><FileText className="size-4 opacity-50" /></span>}
+            {item.coverUrl ? <img src={item.coverUrl} alt="" referrerPolicy="no-referrer" className="size-10 shrink-0 rounded-md object-cover" loading="lazy" /> : <span className="grid size-10 shrink-0 place-items-center rounded-md" style={{ background: theme.node.panel }}><FileText className="size-4 opacity-50" /></span>}
             <button type="button" onClick={onView} className="min-w-0 flex-1 text-left">
                 <span className="block truncate text-sm font-medium leading-snug">{item.title}</span>
                 <span className="mt-0.5 block truncate text-xs leading-snug opacity-50">{item.prompt}</span>

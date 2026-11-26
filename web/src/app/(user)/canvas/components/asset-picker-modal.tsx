@@ -204,7 +204,7 @@ function PickerCard({ title, kind, cover, videoUrl, loading, onClick }: { title:
             {videoUrl ? (
                 <video src={videoUrl + "#t=0.1"} poster={cover || undefined} muted playsInline preload="metadata" className="aspect-[4/3] w-full bg-black object-cover" />
             ) : cover ? (
-                <img src={cover} alt={title} className="aspect-[4/3] w-full object-cover" />
+                <img src={cover} alt={title} referrerPolicy="no-referrer" className="aspect-[4/3] w-full object-cover" />
             ) : (
                 <div className="flex aspect-[4/3] items-center justify-center bg-stone-100 p-3 text-center text-xs leading-5 text-stone-500 dark:bg-stone-800 dark:text-stone-400">{title}</div>
             )}
